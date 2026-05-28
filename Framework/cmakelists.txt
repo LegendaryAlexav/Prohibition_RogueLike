@@ -1,0 +1,38 @@
+cmake_minimum_required( VERSION 3.20 )
+
+###################
+# Framework Library
+###################
+
+# File Setup
+file( GLOB_RECURSE FrameworkSourceFiles
+    Source/*.cpp
+    Source/*.h
+)
+source_group( TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${FrameworkSourceFiles} )
+
+# Project Creation
+add_library( Framework ${FrameworkSourceFiles} )
+
+target_include_directories( Framework PUBLIC
+    Source
+)
+
+target_link_libraries( Framework PUBLIC
+    bgfx
+    bx
+    bimg
+    otherLibs
+    box2d
+    Jolt
+)
+
+target_compile_features( Framework PRIVATE cxx_std_20 )
+target_compile_options( Framework PUBLIC "/Zc:__cplusplus" )
+target_compile_options( Framework PUBLIC "/Zc:preprocessor" )
+target_compile_definitions( Framework PUBLIC "BX_CONFIG_DEBUG=1" )
+
+# PCH Files
+target_precompile_headers( Framework PRIVATE Source/CoreHeaders.h )
+file( GLOB_RECURSE FrameworkPCHFiles ${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/cmake_pch.* )
+source_group( "CMake PCH Files" FILES ${FrameworkPCHFiles} )

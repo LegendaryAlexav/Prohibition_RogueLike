@@ -1,0 +1,41 @@
+cmake_minimum_required( VERSION 3.20 )
+
+# Global Settings
+set_property( GLOBAL PROPERTY USE_FOLDERS ON )
+
+# Solution
+project( GameSolution VERSION 0.0.1 )
+
+# Visual Studio Settings
+if( CMAKE_CXX_COMPILER_ID MATCHES "MSVC" )
+    set( CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /ZI" ) # Program Database for Edit and Continue
+endif()
+
+###################
+# Framework Library
+###################
+
+add_subdirectory( Framework )
+
+###################
+# 3rd Party Libraries
+###################
+
+if( IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../SharedLibraries" )
+    message( STATUS "Using SharedLibraries folder for 3rd Party Libraries" )
+    add_subdirectory( ../SharedLibraries Libraries )
+else()
+    add_subdirectory( Libraries Libraries )
+endif()
+
+###################
+# Game Project
+###################
+
+add_subdirectory( Game )
+
+# Visual Studio Settings
+if( CMAKE_CXX_COMPILER_ID MATCHES "MSVC" )
+    # Startup Project
+    set_property( DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT GameProject )
+endif()

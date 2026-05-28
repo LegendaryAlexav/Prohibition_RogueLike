@@ -1,0 +1,575 @@
+//
+// Copyright (c) 2016-2023 Jimmy Lord
+//
+// This software is provided 'as-is', without any express or implied warranty.  In no event will the authors be held liable for any damages arising from the use of this software.
+// Permission is granted to anyone to use this software for any purpose, including commercial applications, and to alter it and redistribute it freely, subject to the following restrictions:
+// 1. The origin of this software must not be misrepresented; you must not claim that you wrote the original software. If you use this software in a product, an acknowledgment in the product documentation would be appreciated but is not required.
+// 2. Altered source versions must be plainly marked as such, and must not be misrepresented as being the original software.
+// 3. This notice may not be removed or altered from any source distribution.
+
+#include "CoreHeaders.h"
+
+#if WIN32
+#include "bgfx/platform.h"
+
+#include "FWWindows.h"
+#include "GameCore.h"
+#include "EventSystem/EventManager.h"
+#include "EventSystem/Events.h"
+#include "Utility/Utility.h"
+
+namespace fw
+{
+    // Initialize window on windows, huge chunks taken from nehe
+    //    http://nehe.gamedev.net/tutorial/creating_an_opengl_window_%28win32%29/13001/
+
+    // Public methods
+
+    FWWindows::FWWindows(uint32 width, uint32 height, bgfx::RendererType::Enum renderType)
+        : FWCore( width, height, renderType )
+    {
+        init( width, height );
+
+        // Initialize bgfx.
+        bgfx::Init init;
+    
+        init.platformData.nwh = getWindowHandle();
+        init.type = renderType;
+
+        init.resolution.width = width;
+        init.resolution.height = height;
+        init.resolution.reset = BGFX_RESET_VSYNC;
+
+        bool succeeded = bgfx::init( init );
+        assert( succeeded );
+
+        // Show the window.
+        ShowWindow( m_hWnd, SW_SHOW );   // Show the window.
+        SetForegroundWindow( m_hWnd );   // Slightly higher priority.
+        SetFocus( m_hWnd );              // Sets keyboard focus to the window.
+        resizeWindow( width, height );   // Set up our screen.
+    }
+
+    FWWindows::~FWWindows()
+    {
+        bgfx::shutdown();
+    }
+
+    bool FWWindows::init(uint32 width, uint32 height)
+    {
+        m_windowClientWidth = width;
+        m_windowClientHeight = height;
+
+        // Create our render window.
+        if( !FWWindows::createRenderWindow( "My Window", width, height, 32, m_fullscreenMode ) )
+        {
+            PostQuitMessage( 0 );
+            return false;
+        }
+
+        return true;
+    }
+
+    uint32 FWWindows::run(GameCore& game)
+    {
+        m_pGame = &game;
+
+        // Main loop.
+        MSG message;
+        bool done = false;
+
+        double lastTime = getSystemTimeSinceGameStart();
+
+        while( !done )
+        {
+            if( PeekMessage( &message, nullptr, 0, 0, PM_REMOVE ) )
+            {
+                if( message.message == WM_QUIT )
+                {
+                    done = true;
+                }
+                else
+                {
+                    TranslateMessage( &message );
+                    DispatchMessage( &message );
+                }
+            }
+            else
+            {
+                double currentTime = getSystemTimeSinceGameStart();
+                float deltaTime = static_cast<float>( currentTime - lastTime );
+                lastTime = currentTime;
+
+                game.startFrame( deltaTime );
+                game.update( deltaTime );
+                game.draw();
+
+                // Swap buffers.
+                m_frameCount = bgfx::frame();
+
+                // Backup the state of the keyboard and mouse.
+                for( int i=0; i<256; i++ )
+                    m_oldKeyStates[i] = m_keyStates[i];
+
+                for( int i=0; i<3; i++ )
+                    m_oldMouseButtonStates[i] = m_mouseButtonStates[i];
+
+                m_mouseWheel = 0;
+            }
+
+            if( m_quitAtEndOfFrame == true )
+            {
+                done = true;
+                m_quitAtEndOfFrame = false;
+            }
+        }
+
+        // Truncate wParam in 64-bit mode to an int.
+        return static_cast<uint32>( message.wParam );
+    }
+
+    void FWWindows::shutdown()
+    {
+        destroyRenderWindow( true );
+        PostQuitMessage(0);
+    }
+
+    void FWWindows::setWindowSize(uint32 width, uint32 height)
+    {
+        setWindowPositionAndSize( 0, 0, width, height, false );
+    }
+
+    void FWWindows::setWindowPositionAndSize(int32 x, int32 y, uint32 width, uint32 height, bool maximized)
+    {
+        SetWindowPos( m_hWnd, nullptr, x, y, width, height, 0 );
+        if( maximized )
+        {
+            ShowWindow( m_hWnd, SW_MAXIMIZE );
+        }
+        RECT clientRect;
+        GetClientRect( m_hWnd, &clientRect );
+        resizeWindow( clientRect.right - clientRect.left, clientRect.bottom - clientRect.top );
+    }
+
+    void FWWindows::setClientPositionAndSize(int32 x, int32 y, uint32 width, uint32 height, bool maximized)
+    {
+        uint32 maxWidth = GetSystemMetrics( SM_CXFULLSCREEN );
+        uint32 maxHeight = GetSystemMetrics( SM_CYFULLSCREEN );
+
+        float aspect = static_cast<float>( width ) / height;
+
+        if( width > maxWidth )
+        {
+            width = maxWidth;
+            height = static_cast<uint32>(maxWidth / aspect);
+        }
+
+        if( height > maxHeight )
+        {
+            width = static_cast<uint32>(maxHeight * aspect);
+            height = maxHeight;
+        }
+
+        DWORD dwStyle = static_cast<DWORD>( GetWindowLongPtr( m_hWnd, GWL_STYLE ) );
+        DWORD dwExStyle = static_cast<DWORD>( GetWindowLongPtr( m_hWnd, GWL_EXSTYLE ) );
+        HMENU menu = GetMenu( m_hWnd );
+
+        // Calculate the full size of the window needed to match our client area of width/height.
+        RECT WindowRect = { 0, 0, (int32)width, (int32)height };
+        AdjustWindowRectEx( &WindowRect, dwStyle, menu ? TRUE : FALSE, dwExStyle );
+
+        int windowWidth = WindowRect.right - WindowRect.left;
+        int windowHeight = WindowRect.bottom - WindowRect.top;
+
+        SetWindowPos( m_hWnd, 0, x, y, windowWidth, windowHeight, 0 );
+        if( maximized )
+        {
+            ShowWindow( m_hWnd, SW_MAXIMIZE );
+        }
+        resizeWindow( width, height );
+    }
+
+    bool FWWindows::isKeyDown(uint32 value)
+    {
+        assert( value < 256 );
+        return m_keyStates[value];
+    }
+
+    bool FWWindows::isMouseButtonDown(uint32 id)
+    {
+        assert( id < 3 );
+        return m_mouseButtonStates[id];
+    }
+
+    void FWWindows::getMouseCoordinates(int32* mx, int32* my)
+    {
+        POINT p;
+        if( GetCursorPos( &p ) )
+        {
+            if( ScreenToClient( m_hWnd, &p ) )
+            {
+                *mx = p.x;
+                *my = p.y;
+            }
+        }
+    }
+
+    float FWWindows::getMouseWheel()
+    {
+        return m_mouseWheel;
+    }
+
+    // Protected methods.
+
+    void FWWindows::resizeWindow(uint32 width, uint32 height)
+    {
+        if( height <= 0 ) height = 1;
+        if( width <= 0 ) width = 1;
+
+        m_windowClientWidth = width;
+        m_windowClientHeight = height;
+
+        int viewID = 1;
+
+        bgfx::reset( width, height, BGFX_RESET_VSYNC );
+        bgfx::setViewRect( viewID, 0, 0, width, height );
+
+        if( m_pGame )
+        {
+            WindowResizeEvent* pEvent = new WindowResizeEvent( width, height );
+            m_pGame->getEventManager()->addEvent( pEvent );
+        }
+    }
+
+    bool FWWindows::createRenderWindow(const char* title, uint32 width, uint32 height, uint8 colorBits, bool fullscreenflag)
+    {
+        DWORD dwExStyle;
+        DWORD dwStyle;
+
+        RECT WindowRect;
+        WindowRect.left = (long)0;
+        WindowRect.right = (long)width;
+        WindowRect.top = (long)0;
+        WindowRect.bottom = (long)height;
+
+        m_fullscreenMode = fullscreenflag;
+
+        m_hInstance = GetModuleHandle( nullptr );       // Grab an instance for our window.
+
+        // Define and register the window class.
+        {
+            WNDCLASSEX wc;
+            ZeroMemory( &wc, sizeof(wc) );
+            wc.cbSize = sizeof( wc );
+
+            wc.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;  // Redraw on move, and own DC for window.
+            wc.lpfnWndProc = (WNDPROC)FWWindows::wndProc;   // WndProc handles messages.
+            wc.cbClsExtra = 0;                              // No extra window data.
+            wc.cbWndExtra = 0;                              // No extra window data.
+            wc.hInstance = m_hInstance;                     // Set the instance.
+            wc.hIcon = LoadIcon( 0, IDI_WINLOGO );          // Load the default icon.
+            wc.hCursor = LoadCursor( 0, IDC_ARROW );        // Load the arrow pointer.
+            wc.hbrBackground = 0;                           // No background required.
+            wc.lpszMenuName = nullptr;                      // We don't want a menu.
+            wc.lpszClassName = "MyWindowClass";             // Set the class name.
+
+            // Attempt to register the Window Class.
+            if( !RegisterClassEx( &wc ) )
+            {
+                return failAndCleanup( "Failed To Register The Window Class." );
+            }
+        }
+
+        if( m_fullscreenMode )
+        {
+            DEVMODE dmScreenSettings;                                   // Device mode.
+            memset( &dmScreenSettings, 0, sizeof( dmScreenSettings ) ); // Makes sure memory's cleared.
+            dmScreenSettings.dmSize = sizeof( dmScreenSettings );       // Size of the devmode structure.
+            dmScreenSettings.dmPelsWidth  = width;                      // Selected screen width.
+            dmScreenSettings.dmPelsHeight = height;                     // Selected screen height.
+            dmScreenSettings.dmBitsPerPel = colorBits;                  // Selected bits per pixel.
+            dmScreenSettings.dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT;
+
+            // Try to set selected mode and get results.  NOTE: CDS_FULLSCREEN gets rid of start bar.
+            if( ChangeDisplaySettings( &dmScreenSettings, CDS_FULLSCREEN ) != DISP_CHANGE_SUCCESSFUL )
+            {
+                // If the mode fails, offer two options.  Quit or run in a window.
+                if( MessageBox( 0, "The requested fullscreen mode is not supported by\nyour video card.\nTry a different resolution.\nUse Windowed Mode Instead?", "", MB_YESNO|MB_ICONEXCLAMATION ) == IDYES )
+                {
+                    m_fullscreenMode = false;
+                }
+                else
+                {
+                    //return FailAndCleanup( "Program Will Now Close." );
+                    return false;
+                }
+            }
+        }
+
+        if( m_fullscreenMode )
+        {
+            dwExStyle = WS_EX_APPWINDOW;
+            dwStyle = WS_POPUP;
+            ShowCursor( false );
+        }
+        else
+        {
+            dwExStyle = WS_EX_APPWINDOW | WS_EX_WINDOWEDGE;
+            dwStyle = WS_OVERLAPPEDWINDOW;
+        }
+
+        AdjustWindowRectEx( &WindowRect, dwStyle, false, dwExStyle );   // Adjust window to true requested size.
+
+        // Create our window.
+        {
+            m_hWnd = CreateWindowEx( dwExStyle,           // Extended style for the window.
+                     "MyWindowClass",                     // Class name.
+                     title,                               // Window title.
+                     WS_CLIPSIBLINGS | WS_CLIPCHILDREN |  // Required window style.
+                     dwStyle,                             // Selected window style.
+                     0, 0,                                // Window position.
+                     WindowRect.right-WindowRect.left,    // Calculate adjusted window width.
+                     WindowRect.bottom-WindowRect.top,    // Calculate adjusted window height.
+                     nullptr,                             // No parent window.
+                     nullptr,                             // No menu.
+                     m_hInstance,                         // Instance.
+                     this );                              // Pass a pointer to this FWWindows object to WM_NCCREATE.
+        
+            if( m_hWnd == nullptr )
+            {
+                return failAndCleanup( "Window Creation Error." );
+            }
+        }
+
+        return true;
+    }
+
+    bool FWWindows::failAndCleanup(const char* pMessage)
+    {
+        destroyRenderWindow( true );
+        MessageBox( 0, pMessage, "ERROR", MB_OK|MB_ICONEXCLAMATION );
+        return false;
+    }
+
+    void FWWindows::destroyRenderWindow(bool destroyInstance)
+    {
+        if( m_fullscreenMode )
+        {
+            ChangeDisplaySettings( nullptr, 0 );
+            ShowCursor( true );
+        }
+
+        if( m_hWnd && !DestroyWindow( m_hWnd ) )
+        {
+            MessageBox( 0, "Could Not Release hWnd.", "SHUTDOWN ERROR", MB_OK | MB_ICONINFORMATION );
+        }
+
+        if( destroyInstance && m_hInstance != nullptr )
+        {
+            if( !UnregisterClass( "MyWindowClass", m_hInstance ) )
+            {
+                MessageBox( 0, "Could Not Unregister Class.", "SHUTDOWN ERROR", MB_OK | MB_ICONINFORMATION );
+            }
+            m_hInstance = 0;
+        }
+
+        m_hWnd = 0;
+    }
+
+    // This is a static method.
+    LRESULT CALLBACK FWWindows::wndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+    {
+        //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! WARNING !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! READ THIS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // This is a static method, which means it's essentially a global function.
+        // It has no "this".
+        // That means you can't access variables and methods directly.
+        // As a member of the FWWindows class it has full access to private
+        //     variables and methods of any instance of the class.
+        // To access the single instance of FWWindows that we created
+        //     you have to use the pFWWindows pointer initialized just below.
+        //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+        // Get a pointer to the FWWindows object associated with this window.
+        FWWindows* pFWWindows = (FWWindows*)GetWindowLongPtr( hWnd, GWLP_USERDATA );
+
+        switch( uMsg )
+        {
+        case WM_NCCREATE:
+            {
+                // Set the user data for this hWnd to the FWWindows* we passed in, used on first line of this method above.
+                CREATESTRUCT* pCreateStruct = reinterpret_cast<CREATESTRUCT*>( lParam );
+                FWWindows* pFWWindows = static_cast<FWWindows*>( pCreateStruct->lpCreateParams );
+                SetWindowLongPtr( hWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>( pFWWindows ) );
+
+                if( pFWWindows )
+                {
+                    pFWWindows->m_hWnd = hWnd;
+                }
+            }
+            return 1;
+
+        case WM_DESTROY:
+            {
+                if( pFWWindows )
+                {
+                    pFWWindows->m_hWnd = nullptr;
+                }
+            }
+            return 0;
+
+        case WM_ACTIVATE:
+            {
+                if( !HIWORD(wParam) )
+                {
+                    pFWWindows->m_windowIsActive = true;
+                }
+                else
+                {
+                    pFWWindows->m_windowIsActive = false;
+                } 
+            }
+            return 0;
+
+        case WM_SYSCOMMAND:
+            {
+                switch( wParam )
+                {
+                // Don't let screensaver or monitor power save mode kick in.
+                case SC_SCREENSAVE:
+                case SC_MONITORPOWER:
+                    return 0;
+                }
+            }
+            break;
+
+        case WM_CLOSE:
+            {
+                PostQuitMessage( 0 );
+            }
+            return 0;
+
+        case WM_CHAR:
+            {
+                // Send a char event to the event manager.
+                CharEvent* pEvent = new CharEvent( (uint32)wParam );
+                pFWWindows->m_pGame->getEventManager()->addEvent( pEvent );
+            }
+            return 0;
+
+        case WM_KEYDOWN:
+            {
+                bool keyWasPressedLastTimeMessageArrived = lParam & (1 << 30);
+
+                if( keyWasPressedLastTimeMessageArrived == false )
+                {
+                    if( wParam == VK_ESCAPE && pFWWindows->m_escapeKeyWillQuit )
+                        PostQuitMessage( 0 );
+
+                    pFWWindows->m_keyStates[wParam] = true;
+
+                    // Send a input event to the event manager.
+                    InputEvent* pEvent = new InputEvent(
+                        InputEvent::DeviceType::Keyboard,
+                        InputEvent::DeviceState::Pressed,
+                        (uint32)wParam );
+
+                    pFWWindows->m_pGame->getEventManager()->addEvent( pEvent );
+                }
+            }
+            return 0;
+
+        case WM_KEYUP:
+            {
+                pFWWindows->m_keyStates[wParam] = false;
+    
+                // Send a input event to the event manager.
+                InputEvent* pEvent = new InputEvent(
+                    InputEvent::DeviceType::Keyboard,
+                    InputEvent::DeviceState::Released,
+                    (uint32)wParam );
+
+                pFWWindows->m_pGame->getEventManager()->addEvent( pEvent );
+            }
+            return 0;
+
+        case WM_MOUSEMOVE:
+            {
+                int x = GET_X_LPARAM( lParam );
+                int y = GET_Y_LPARAM( lParam );
+            }
+            return 0;
+
+        case WM_LBUTTONDOWN:
+            {
+                SetCapture( pFWWindows->m_hWnd );
+
+                pFWWindows->m_mouseButtonStates[0] = true;
+
+                int x = GET_X_LPARAM( lParam );
+                int y = GET_Y_LPARAM( lParam );
+            }
+            return 0;
+
+        case WM_LBUTTONUP:
+            {
+                ReleaseCapture();
+        
+                pFWWindows->m_mouseButtonStates[0] = false;
+
+                int x = GET_X_LPARAM( lParam );
+                int y = GET_Y_LPARAM( lParam );
+            }
+            return 0;
+
+        case WM_RBUTTONDOWN:
+            {
+                SetCapture( pFWWindows->m_hWnd );
+
+                pFWWindows->m_mouseButtonStates[1] = true;
+            }
+            return 0;
+
+        case WM_RBUTTONUP:
+            {
+                ReleaseCapture();
+
+                pFWWindows->m_mouseButtonStates[1] = false;
+            }
+            return 0;
+
+        case WM_MBUTTONDOWN:
+            {
+                SetCapture( pFWWindows->m_hWnd );
+
+                pFWWindows->m_mouseButtonStates[2] = true;
+            }
+            return 0;
+
+        case WM_MBUTTONUP:
+            {
+                ReleaseCapture();
+
+                pFWWindows->m_mouseButtonStates[2] = false;
+            }
+            return 0;
+
+        case WM_MOUSEWHEEL:
+            {
+                pFWWindows->m_mouseWheel = GET_WHEEL_DELTA_WPARAM(wParam) / 120.0f;
+            }
+            return 0;
+
+        case WM_SIZE:
+            {
+                pFWWindows->resizeWindow( LOWORD(lParam), HIWORD(lParam) );
+            }
+            return 0;
+        }
+
+        // Pass all unhandled messages to DefWindowProc.
+        return DefWindowProc( hWnd, uMsg, wParam, lParam );
+    }
+
+} // namespace fw
+#endif

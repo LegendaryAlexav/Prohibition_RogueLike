@@ -1,0 +1,24 @@
+[submodule "Libraries/box2d"]
+	path = Libraries/box2d
+	url = https://github.com/erincatto/box2d.git
+[submodule "Libraries/bgfx"]
+	path = Libraries/bgfx
+	url = https://github.com/bkaradzic/bgfx.git
+[submodule "Libraries/bimg"]
+	path = Libraries/bimg
+	url = https://github.com/bkaradzic/bimg.git
+[submodule "Libraries/bx"]
+	path = Libraries/bx
+	url = https://github.com/bkaradzic/bx.git
+[submodule "Libraries/imgui"]
+	path = Libraries/imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "Libraries/nlohmann"]
+	path = Libraries/nlohmann
+	url = https://github.com/nlohmann/json.git
+[submodule "Libraries/pcg-cpp"]
+	path = Libraries/pcg-cpp
+	url = https://github.com/imneme/pcg-cpp.git
+[submodule "Libraries/stb"]
+	path = Libraries/stb
+	url = https://github.com/nothings/stb.git

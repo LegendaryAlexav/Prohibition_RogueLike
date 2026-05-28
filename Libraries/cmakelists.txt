@@ -1,0 +1,159 @@
+cmake_minimum_required( VERSION 3.20 )
+
+add_subdirectory( box2d )
+add_subdirectory( JoltPhysics/Build )
+set_property( TARGET Jolt PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL" )
+
+set_target_properties(box2d PROPERTIES FOLDER "Physics Engine")
+set_target_properties(Jolt PROPERTIES FOLDER "Physics Engine")
+
+###################
+# bimg Library
+###################
+
+add_compile_options(/wd4244) # 'argument': conversion from 'double' to 'btScalar', possible loss of data
+
+# File Setup
+file( GLOB_RECURSE bimgSourceFiles
+    bimg/src/*.cpp
+    bimg/src/*.h
+    bimg/include/bimg/*.h
+    bimg/3rdparty/astc-encoder/source/*.cpp
+)
+source_group( TREE ${CMAKE_CURRENT_SOURCE_DIR}/bimg FILES ${bimgSourceFiles} )
+
+# Project Creation
+add_library( bimg ${bimgSourceFiles} )
+
+set_target_properties( bimg PROPERTIES FOLDER "BGFX Libs" )
+
+target_include_directories( bimg PUBLIC
+    bimg/include
+    bimg/3rdparty
+    bimg/3rdparty/astc-encoder/include
+    bimg/3rdparty/tinyexr/deps/miniz
+    bimg/3rdparty/iqa/include
+    bx/include
+    bx/include/compat/msvc
+    ./
+)
+
+target_compile_features( bimg PRIVATE cxx_std_20 )
+target_compile_options( bimg PUBLIC "/Zc:__cplusplus" )
+target_compile_options( bimg PUBLIC "/Zc:preprocessor" )
+target_compile_definitions( bimg PUBLIC "BX_CONFIG_DEBUG=1" )
+
+add_compile_options(/w44244)
+
+###################
+# bx Library
+###################
+
+# File Setup
+file( GLOB_RECURSE bxSourceFiles
+    bx/src/amalgamated.cpp
+    bx/include/bx/*.h
+    bx/include/compat/msvc/*.h
+)
+source_group( TREE ${CMAKE_CURRENT_SOURCE_DIR}/bx FILES ${bxSourceFiles} )
+
+# Project Creation
+add_library( bx ${bxSourceFiles} )
+
+set_target_properties( bx PROPERTIES FOLDER "BGFX Libs" )
+
+target_include_directories( bx PUBLIC
+    bx/include
+    bx/include/compat/msvc
+    bx/3rdparty
+    ./
+)
+
+target_compile_features( bx PRIVATE cxx_std_20 )
+target_compile_options( bx PUBLIC "/Zc:__cplusplus" )
+target_compile_options( bx PUBLIC "/Zc:preprocessor" )
+target_compile_definitions( bx PUBLIC "BX_CONFIG_DEBUG=1" )
+target_compile_definitions( bx PUBLIC "__STDC_FORMAT_MACROS" )
+target_compile_definitions( bx PUBLIC "_CRT_SECURE_NO_WARNINGS" )
+
+if( MSVC )
+    target_compile_definitions( bx PRIVATE _HAS_EXCEPTIONS=0 )
+    target_compile_options( bx PRIVATE /EHs- )
+endif()
+
+###################
+# bgfx Library
+###################
+
+add_compile_options(/wd4244) # 'argument': conversion from 'double' to 'btScalar', possible loss of data
+add_compile_options(/wd4267) # '=': conversion from 'size_t' to 'long', possible loss of data
+add_compile_options(/wd4305) # 'initializing': truncation from 'double' to 'btScalar'
+
+# File Setup
+file( GLOB_RECURSE bgfxSourceFiles
+    bgfx/src/amalgamated.cpp
+    bgfx/src/*.h
+    bgfx/include/bgfx/*.h
+)
+source_group( TREE ${CMAKE_CURRENT_SOURCE_DIR}/bgfx FILES ${bgfxSourceFiles} )
+
+# Project Creation
+add_library( bgfx ${bgfxSourceFiles} )
+
+set_target_properties( bgfx PROPERTIES FOLDER "BGFX Libs" )
+
+target_include_directories( bgfx PUBLIC
+    bgfx/include
+    bgfx/3rdParty
+    bgfx/3rdparty/directx-headers/include/directx
+    bgfx/3rdParty/khronos
+    bx/include
+    bx/include/compat/msvc
+    bimg/include
+    bimg/3rdParty
+    ./
+)
+
+target_compile_features( bgfx PRIVATE cxx_std_20 )
+target_compile_options( bgfx PUBLIC "/Zc:__cplusplus" )
+target_compile_options( bgfx PUBLIC "/Zc:preprocessor" )
+target_compile_definitions( bgfx PUBLIC "BX_CONFIG_DEBUG=1" )
+target_compile_definitions( bgfx PUBLIC "__STDC_FORMAT_MACROS" )
+target_compile_definitions( bgfx PUBLIC "_CRT_SECURE_NO_WARNINGS" )
+
+add_compile_options(/w44244)
+add_compile_options(/w44267)
+add_compile_options(/w44305)
+
+###################
+# OtherLibs Library
+###################
+
+# File Setup
+file( GLOB_RECURSE otherLibsSourceFiles
+    stb/*.h
+    rapidjson/include/*.h
+    pcg-cpp/include/*.hpp
+)
+file( GLOB otherLibsSourceFilesNonRecursive
+    imgui/*.cpp
+    imgui/*.h
+)
+list( APPEND otherLibsSourceFiles ${otherLibsSourceFilesNonRecursive} )
+source_group( TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${otherLibsSourceFiles} )
+
+# Project Creation
+add_library( otherLibs ${otherLibsSourceFiles} )
+
+set_target_properties( otherLibs PROPERTIES FOLDER "Other Libs" )
+
+target_include_directories( otherLibs PUBLIC
+    ./
+)
+
+target_compile_features( otherLibs PRIVATE cxx_std_20 )
+target_compile_options( otherLibs PUBLIC "/Zc:__cplusplus" )
+target_compile_options( otherLibs PUBLIC "/Zc:preprocessor" )
+target_compile_definitions( otherLibs PUBLIC "BX_CONFIG_DEBUG=1" )
+target_compile_definitions( otherLibs PUBLIC "__STDC_FORMAT_MACROS" )
+target_compile_definitions( otherLibs PUBLIC "_CRT_SECURE_NO_WARNINGS" )
