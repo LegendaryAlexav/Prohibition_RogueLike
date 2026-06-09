@@ -25,3 +25,6 @@
 [submodule "Libraries/JoltPhysics"]
 	path = Libraries/JoltPhysics
 	url = https://github.com/jrouwe/JoltPhysics.git
+[submodule "Libraries/--force"]
+	path = Libraries/--force
+	url = https://github.com/bkaradzic/bgfx.git
